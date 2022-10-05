@@ -8,11 +8,11 @@ CREATE OR REPLACE TABLE `looker-sandbox-323013.tests.churn_featurestore` AS
            -- Label
            user_id in (
              select user_id
-               from `looker-private-demo.thelook.order_items`
+               from `looker-sandbox-323013.thelook.order_items`
               where date(created_at) >= date_add(current_date(), interval -15 day)
               group by 1
            ) as is_churner
-      FROM `looker-private-demo.thelook.order_items` 
+      FROM `looker-sandbox-323013.thelook.order_items` 
      where date(created_at)  < date_add(current_date(), interval -15 day)
        and date(created_at) >= date_add(current_date(), interval -30 day)
      group by 1

@@ -1,0 +1,239 @@
+{
+  "pipelineSpec": {
+    "components": {
+      "comp-bigquery-query-job": {
+        "executorLabel": "exec-bigquery-query-job",
+        "inputDefinitions": {
+          "parameters": {
+            "job_configuration_query": {
+              "type": "STRING"
+            },
+            "labels": {
+              "type": "STRING"
+            },
+            "location": {
+              "type": "STRING"
+            },
+            "project": {
+              "type": "STRING"
+            },
+            "query": {
+              "type": "STRING"
+            },
+            "query_parameters": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "destination_table": {
+              "artifactType": {
+                "schemaTitle": "google.BQTable",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "gcp_resources": {
+              "type": "STRING"
+            }
+          }
+        }
+      },
+      "comp-sklearn-trainer": {
+        "executorLabel": "exec-sklearn-trainer",
+        "inputDefinitions": {
+          "artifacts": {
+            "input_table": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "gcp_project_id": {
+              "type": "STRING"
+            },
+            "model_artifact_destination": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      }
+    },
+    "deploymentSpec": {
+      "executors": {
+        "exec-bigquery-query-job": {
+          "container": {
+            "args": [
+              "--type",
+              "BigqueryQueryJob",
+              "--project",
+              "{{$.inputs.parameters['project']}}",
+              "--location",
+              "{{$.inputs.parameters['location']}}",
+              "--payload",
+              "{\"configuration\": {\"query\": {{$.inputs.parameters['job_configuration_query']}}, \"labels\": {{$.inputs.parameters['labels']}}}}",
+              "--job_configuration_query_override",
+              "{\"query\": \"{{$.inputs.parameters['query']}}\", \"query_parameters\": {{$.inputs.parameters['query_parameters']}}, \"destination_encryption_configuration\": {\"kmsKeyName\": \"\"}}",
+              "--gcp_resources",
+              "{{$.outputs.parameters['gcp_resources'].output_file}}",
+              "--executor_input",
+              "{{$}}"
+            ],
+            "command": [
+              "python3",
+              "-u",
+              "-m",
+              "google_cloud_pipeline_components.container.v1.gcp_launcher.launcher"
+            ],
+            "image": "gcr.io/ml-pipeline/google-cloud-pipeline-components:1.0.20"
+          }
+        },
+        "exec-sklearn-trainer": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "sklearn_trainer"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'scikit-learn' 'pandas' 'pyarrow' 'dill' 'kfp==1.8.13' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef sklearn_trainer(\n    input_table: Input[Artifact],\n    gcp_project_id: str,\n    model: Output[Model],\n    model_artifact_destination: str\n):\n    from google.cloud import bigquery\n    from sklearn.preprocessing import StandardScaler\n    from sklearn.feature_selection import SelectKBest\n    from sklearn.feature_selection import chi2\n    from sklearn.ensemble import RandomForestClassifier\n    from sklearn.model_selection import RandomizedSearchCV\n    from sklearn.model_selection import PredefinedSplit\n    from sklearn.pipeline import Pipeline\n    import pandas\n    import numpy as np\n    #import joblib\n    import dill as pickle\n    #from transformers import sklearn_transformers\n\n    import os\n    from google.cloud import storage\n\n    class columnDropperTransformer():\n        def __init__(self,columns):\n            self.columns=columns\n        def transform(self,X,y=None):\n            return X.drop(self.columns,axis=1)\n        def fit(self, X, y=None):\n            return self \n\n    project_id = input_table.metadata['projectId']\n    dataset_id = input_table.metadata['datasetId']\n    table_id = input_table.metadata['tableId']\n\n    client = bigquery.Client(project = gcp_project_id)\n    sql = f\"SELECT * FROM `{project_id}.{dataset_id}.{table_id}` where split != 'VALIDATE'\"\n    training_df = client.query(sql).to_dataframe()\n\n    model_pipeline = Pipeline(\n        [\n            (\"columnDropper\", columnDropperTransformer(['user_id', 'bucket', 'split'])),\n            ('scaler', StandardScaler()),\n            (\n                'classification', \n                RandomizedSearchCV(\n                    RandomForestClassifier(),\n                    param_distributions = {\n                        \"n_estimators\": np.arange(1, 2, 3),\n                        \"max_depth\": [3, 5]\n                    },\n                    n_iter = 2,\n                    refit = True,\n                    cv = PredefinedSplit(test_fold = training_df[training_df['split']=='TEST'].index) # Predefined split (no cross validation)\n                )\n            )\n        ]\n    )\n\n    X, Y = training_df.drop(['is_churner'], axis=1), training_df['is_churner']\n\n    model_pipeline.fit(X, Y)\n\n    model.metadata[\"framework\"] = \"RF\"\n    file_name = model.path + f\".pkl\"\n\n    with open(file_name, 'wb') as file:  \n        pickle.dump(model_pipeline, file)\n\n"
+            ],
+            "image": "python:3.9"
+          }
+        }
+      }
+    },
+    "pipelineInfo": {
+      "name": "churn"
+    },
+    "root": {
+      "dag": {
+        "tasks": {
+          "bigquery-query-job": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-bigquery-query-job"
+            },
+            "inputs": {
+              "parameters": {
+                "job_configuration_query": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{\"destinationTable\": {\"projectId\": \"looker-sandbox-323013\", \"datasetId\": \"churn_featuresets\", \"tableId\": \"churn_featureset_20221005072817\"}}"
+                    }
+                  }
+                },
+                "labels": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{}"
+                    }
+                  }
+                },
+                "location": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "US"
+                    }
+                  }
+                },
+                "project": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "looker-sandbox-323013"
+                    }
+                  }
+                },
+                "query": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "select featurestore.* except(is_churner),\n       -- Use Case Specific Features\n       coalesce(use_case_features.nb_orders_last_12_days, 0) as nb_orders_last_12_days,\n       featurestore.is_churner,\n       case \n           when featurestore.bucket < 7 then 'TRAIN' \n           when featurestore.bucket >= 7 and featurestore.bucket < 9 then 'VALIDATE'\n           when featurestore.bucket >= 9 then 'TEST'\n       end as split\n  from `looker-sandbox-323013.tests.churn_featurestore` as featurestore\n  left outer join (\n      SELECT user_id,\n             sum(case when date(created_at) >= date_add(date_add(current_date(), interval -15 day), interval -12 day)  then 1 else 0 end) as nb_orders_last_12_days\n        FROM `looker-sandbox-323013.thelook.order_items` \n       where date(created_at)  < date_add(current_date(), interval -15 day)\n         and date(created_at) >= date_add(current_date(), interval -30 day)\n       group by 1\n  ) as use_case_features\n  using(user_id)"
+                    }
+                  }
+                },
+                "query_parameters": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "[]"
+                    }
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "bigquery-query-job"
+            }
+          },
+          "sklearn-trainer": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-sklearn-trainer"
+            },
+            "dependentTasks": [
+              "bigquery-query-job"
+            ],
+            "inputs": {
+              "artifacts": {
+                "input_table": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "destination_table",
+                    "producerTask": "bigquery-query-job"
+                  }
+                }
+              },
+              "parameters": {
+                "gcp_project_id": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "looker-sandbox-323013"
+                    }
+                  }
+                },
+                "model_artifact_destination": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "gs://vertex-ai-order-items-churn/pipeline_root/order_items_churn"
+                    }
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "sklearn-trainer"
+            }
+          }
+        }
+      }
+    },
+    "schemaVersion": "2.0.0",
+    "sdkVersion": "kfp-1.8.13"
+  },
+  "runtimeConfig": {
+    "gcsOutputDirectory": "gs://vertex-ai-order-items-churn/pipeline_root/order_items_churn"
+  }
+}
