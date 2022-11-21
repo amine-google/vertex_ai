@@ -41,6 +41,129 @@
           }
         }
       },
+      "comp-export-from-bq-to-gcs": {
+        "executorLabel": "exec-export-from-bq-to-gcs",
+        "inputDefinitions": {
+          "artifacts": {
+            "bq_job_output": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "gcp_project_id": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "gcs_dataset": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-generate-model-card": {
+        "executorLabel": "exec-generate-model-card",
+        "inputDefinitions": {
+          "artifacts": {
+            "input_table": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "metrics": {
+              "artifactType": {
+                "schemaTitle": "system.ClassificationMetrics",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "gcp_project_id": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "model_card_file": {
+              "artifactType": {
+                "schemaTitle": "system.HTML",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-generate-statistics": {
+        "executorLabel": "exec-generate-statistics",
+        "inputDefinitions": {
+          "artifacts": {
+            "dataset": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "extra_debug_options": {
+              "type": "STRING"
+            },
+            "extra_google_cloud_options": {
+              "type": "STRING"
+            },
+            "extra_setup_options": {
+              "type": "STRING"
+            },
+            "extra_standard_options": {
+              "type": "STRING"
+            },
+            "extra_worker_options": {
+              "type": "STRING"
+            },
+            "file_pattern": {
+              "type": "STRING"
+            },
+            "project_id": {
+              "type": "STRING"
+            },
+            "tfdv_stats_options": {
+              "type": "STRING"
+            },
+            "use_dataflow": {
+              "type": "STRING"
+            },
+            "use_public_ips": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "statistics": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "statistics_html": {
+              "artifactType": {
+                "schemaTitle": "system.HTML",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
       "comp-sklearn-trainer": {
         "executorLabel": "exec-sklearn-trainer",
         "inputDefinitions": {
@@ -55,9 +178,6 @@
           "parameters": {
             "gcp_project_id": {
               "type": "STRING"
-            },
-            "model_artifact_destination": {
-              "type": "STRING"
             }
           }
         },
@@ -68,6 +188,54 @@
                 "schemaTitle": "system.Model",
                 "schemaVersion": "0.0.1"
               }
+            }
+          }
+        }
+      },
+      "comp-sklearn-validator": {
+        "executorLabel": "exec-sklearn-validator",
+        "inputDefinitions": {
+          "artifacts": {
+            "input_model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "input_table": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "gcp_project_id": {
+              "type": "STRING"
+            },
+            "thresholds_dict_str": {
+              "type": "STRING"
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "kpi": {
+              "artifactType": {
+                "schemaTitle": "system.Metrics",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "metrics": {
+              "artifactType": {
+                "schemaTitle": "system.ClassificationMetrics",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          },
+          "parameters": {
+            "deploy": {
+              "type": "STRING"
             }
           }
         }
@@ -102,6 +270,66 @@
             "image": "gcr.io/ml-pipeline/google-cloud-pipeline-components:1.0.20"
           }
         },
+        "exec-export-from-bq-to-gcs": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "export_from_bq_to_gcs"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'kfp==1.8.14' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef export_from_bq_to_gcs(\n    gcp_project_id: str,\n    bq_job_output: Input[Artifact], \n    gcs_dataset: Output[Dataset]\n):\n\n    from google.cloud import bigquery\n    from google.cloud import storage\n\n    #storage_client = storage.Client(project = gcp_project_id)\n    #print(gcs_dataset.path)\n    #storage_client.create_bucket(gcs_dataset.path.replace(\"gs://\",\"\"))\n\n    # Loading input data\n    project_id = bq_job_output.metadata['projectId']\n    dataset_id = bq_job_output.metadata['datasetId']\n    table_id = bq_job_output.metadata['tableId']\n\n    # Output bucket\n    gcs_dataset.path = gcs_dataset.path + \"/\"\n\n    client = bigquery.Client(project = gcp_project_id)\n    sql = f\"\"\"\n        EXPORT DATA\n        OPTIONS (\n            uri = 'gs:/{gcs_dataset.path.replace(\"gcs/\", \"\")}*.csv',\n            format = 'CSV',\n            overwrite = true,\n            header = true,\n            field_delimiter = ';'\n        )\n        AS (\n            SELECT * FROM `{project_id}.{dataset_id}.{table_id}`\n        );\n    \"\"\"\n\n    print(sql)\n\n    client.query(sql)\n\n"
+            ],
+            "image": "python:3.9"
+          }
+        },
+        "exec-generate-model-card": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "generate_model_card"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'model-card-toolkit' 'seaborn' 'pandas' 'kfp==1.8.14' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef generate_model_card(\n    gcp_project_id: str,\n    input_table: Input[Artifact],\n    metrics: Input[ClassificationMetrics],\n    model_card_file: Output[HTML]\n):\n\n    from google.cloud import bigquery\n    from datetime import date\n    from io import BytesIO\n    from IPython import display\n    import model_card_toolkit as mctlib\n    import base64\n    import matplotlib.pyplot as plt\n    import pandas as pd\n    import seaborn as sns\n    import uuid\n\n    import os.path\n\n    def plot_to_str():\n        img = BytesIO()\n        plt.savefig(img, format='png')\n        return base64.encodebytes(img.getvalue()).decode('utf-8')\n\n\n    # Loading input data\n    project_id = input_table.metadata['projectId']\n    dataset_id = input_table.metadata['datasetId']\n    table_id = input_table.metadata['tableId']\n\n    client = bigquery.Client(project = gcp_project_id)\n    sql = f\"SELECT * FROM `{project_id}.{dataset_id}.{table_id}` where split != 'VALIDATE'\"\n    training_df = client.query(sql).to_dataframe()\n\n    X_train = training_df[training_df['split']=='TRAIN']\n    X_test = training_df[training_df['split']=='TEST']\n\n\n    # Model Card Creation\n    model_card_file.path = os.path.dirname(model_card_file.path) + \"/model_cards/\"\n    mct = mctlib.ModelCardToolkit(model_card_file.path)\n    model_card = mct.scaffold_assets()\n    model_card.model_details.version.name = str(uuid.uuid4())\n    model_card.model_details.version.date = str(date.today())\n\n    # Model Card - Model General information \n    model_card.model_details.name = 'Churn Prediction Model'\n    model_card.model_details.overview = ('The model predict which users will churn, based on the Order Items data')\n    model_card.model_details.owners = [mctlib.Owner(name= 'Amine Hakkou', contact='aminehakkou@google.com')]\n    model_card.model_details.references = [\n        mctlib.Reference(reference='https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+(Diagnostic)'),\n        mctlib.Reference(reference='https://minds.wisconsin.edu/bitstream/handle/1793/59692/TR1131.pdf')\n    ]\n    model_card.considerations.limitations = [mctlib.Limitation(description='Churn Analysis')]\n    model_card.considerations.use_cases = [mctlib.UseCase(description='Churn Analysis')]\n    model_card.considerations.users = [mctlib.User(description='Googlers'), mctlib.User(description='Curious People')]\n    model_card.considerations.ethical_considerations = [\n        mctlib.Risk(\n            name=('Selection Bias'),\n            mitigation_strategy='Automate the selection process'\n        )\n    ]\n\n    # Model Card - Graphs\n\n    sns.displot(x = X_train['nb_orders_last_7_days'], hue = X_train['is_churner'])\n    dist_train_nb_orders_last_7_days = plot_to_str()\n\n    sns.displot(x = X_train['nb_orders_last_15_days'], hue = X_train['is_churner'])\n    dist_train_nb_orders_last_15_days = plot_to_str()\n\n    model_card.model_parameters.data.append(mctlib.Dataset())\n    model_card.model_parameters.data[0].graphics.description = (f'{len(X_train)} rows with {len(X_train.columns)} features')\n    model_card.model_parameters.data[0].graphics.collection = [\n        mctlib.Graphic(\n            image = dist_train_nb_orders_last_7_days\n        ),\n        mctlib.Graphic(\n            image = dist_train_nb_orders_last_15_days\n        )\n    ]\n\n\n\n    sns.displot(x = X_test['nb_orders_last_7_days'], hue = X_test['is_churner'])\n    dist_test_nb_orders_last_7_days = plot_to_str()\n\n    sns.displot(x = X_test['nb_orders_last_15_days'], hue = X_test['is_churner'])\n    dist_test_nb_orders_last_15_days = plot_to_str()\n\n    model_card.model_parameters.data.append(mctlib.Dataset())\n    model_card.model_parameters.data[1].graphics.description = (f'{len(X_test)} rows with {len(X_test.columns)} features')\n    model_card.model_parameters.data[1].graphics.collection = [\n        mctlib.Graphic(\n            image = dist_test_nb_orders_last_7_days\n        ),\n        mctlib.Graphic(\n            image = dist_test_nb_orders_last_15_days\n        )\n    ]\n\n    # Create the Model Card\n    mct.update_model_card(model_card)\n    html = mct.export_format()\n\n"
+            ],
+            "image": "tensorflow/tfx:1.5.1"
+          }
+        },
+        "exec-generate-statistics": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "generate_statistics"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'tensorflow-data-validation' 'apache-beam==2.35.0' 'kfp==1.8.14' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef generate_statistics(\n    statistics: Output[Artifact],\n    statistics_html: Output[HTML],\n    dataset: Input[Dataset],\n    use_dataflow: bool = False,\n    project_id: str = None,\n    region: str = None,\n    subnetwork: str = None,\n    use_public_ips: bool = True,\n    tfdv_container_image: str = None,\n    gcs_staging_location: str = None,\n    gcs_temp_location: str = None,\n    extra_standard_options: dict = {},\n    extra_setup_options: dict = {},\n    extra_worker_options: dict = {},\n    extra_google_cloud_options: dict = {},\n    extra_debug_options: dict = {},\n    file_pattern: str = None,\n    tfdv_stats_options: dict = None,\n) -> None:\n    \"\"\"\n    Generate tfdv statistics given a Dataset as input.\n    Wraps tfdv.generate_statistics function.\n        Args:\n            statistics (Output[Artifact]): this parameter will be passed\n                automatically by the KFP orchestrator at runtime.\n            dataset (Input[Dataset]): the desired Input[Dataset] from which the\n                statistics will need to be generated.\n            use_dataflow (bool): whether to run the job using Dataflow\n                instead of locally. Defaults to False.\n            project_id (str): Google Cloud project ID (for use with Dataflow)\n            region (str): Region in which to run the Dataflow job\n            subnetwork (str): Subnetwork in which to run the Dataflow job,\n                in the form regions/<REGION>/subnetworks/<SUBNET_NAME>.\n                Dataflow uses the project default network by default.\n            use_public_ips (bool): Whether the Dataflow worker nodes should have\n                public IP addresses. Defaults to True.\n            tfdv_container_image (str): URI of a container image to use for the\n                Dataflow workers. It should be based on the appropriate Apache Beam\n                base image (Python 3.7, >=v2.35.0), and should have TFDV preinstalled\n                (same version as is used here). An example Dockerfile can be found in\n                this repo under containers/tfdv. If not provided, Dataflow will install\n                from PyPi.\n            gcs_staging_location (str): GCS path for a Dataflow staging location.\n            gcs_temp_location (str): GCS path for a Dataflow temp/scratch location.\n            extra_standard_options (dict): any extra StandardOptions you want to use for\n                the Beam job. Note that these are applied last, so may overwrite any of\n                the settings applied by this function. See the reference here:\n                https://beam.apache.org/releases/pydoc/current/_modules/apache_beam/options/pipeline_options.html#StandardOptions\n            extra_setup_options (dict): any extra SetupOptions you want to use for the\n                Beam job. Note that these are applied last, so may overwrite any of the\n                settings applied by this function. See the reference here:\n                https://beam.apache.org/releases/pydoc/current/_modules/apache_beam/options/pipeline_options.html#SetupOptions\n            extra_worker_options (dict): any extra WorkerOptions you want to use for the\n                Beam job. Note that these are applied last, so may overwrite any of the\n                settings applied by this function. See the reference here:\n                https://beam.apache.org/releases/pydoc/current/_modules/apache_beam/options/pipeline_options.html#WorkerOptions\n            extra_google_cloud_options (dict): any extra GoogleCloudOptions you want to\n                use for the Beam job. Note that these are applied last, so may overwrite\n                any of the settings applied by this function. See the reference here:\n                https://beam.apache.org/releases/pydoc/current/_modules/apache_beam/options/pipeline_options.html#GoogleCloudOptions\n            extra_debug_options (dict): any extra DebugOptions you want to use for the\n                Beam job. Note that these are applied last, so may overwrite any of the\n                settings applied by this function. See the reference here:\n                https://beam.apache.org/releases/pydoc/current/_modules/apache_beam/options/pipeline_options.html#DebugOptions\n            file_pattern (str): Read data from one or more files. If empty, then\n                input data is read from single file. For multiple files, use a pattern\n                e.g. \"file-*.csv\".\n            tfdv_stats_options (dict): Options for generating statistics.\n                Can pass pre-defined schema, sampling rate, histogram buckets,\n                allowlist for features etc as part of these options. See reference here:\n                https://www.tensorflow.org/tfx/data_validation/api_docs/python/tfdv/StatsOptions\n        Returns:\n            None\n    \"\"\"\n    import inspect\n    import logging\n    import os\n\n    import tensorflow_data_validation as tfdv\n    from tensorflow_data_validation.utils import display_util\n\n    from apache_beam.options.pipeline_options import (\n        PipelineOptions,\n        GoogleCloudOptions,\n        StandardOptions,\n        SetupOptions,\n        WorkerOptions,\n        DebugOptions,\n    )\n\n    logging.getLogger().setLevel(logging.INFO)\n\n    def write_setup_py_file():\n        \"\"\"Writes the required setup.py file to disk, ready for use by TFDV\"\"\"\n\n        setup_file_contents = inspect.cleandoc(\n            f\"\"\"\n                import setuptools\n                setuptools.setup(\n                    install_requires=['tensorflow-data-validation=={tfdv.__version__}'],\n                    packages=setuptools.find_packages()\n                )\n        \"\"\"\n        )\n\n        # Create the setup.py file for managing pipeline dependencies\n        logging.info(\"Writing setup.py to disk\")\n        with open(\"./setup.py\", \"w\") as f:\n            f.write(setup_file_contents)\n\n    pipeline_options = PipelineOptions()\n    debug_options = pipeline_options.view_as(DebugOptions)\n    google_cloud_options = pipeline_options.view_as(GoogleCloudOptions)\n    setup_options = pipeline_options.view_as(SetupOptions)\n    standard_options = pipeline_options.view_as(StandardOptions)\n    worker_options = pipeline_options.view_as(WorkerOptions)\n\n    if use_dataflow:\n\n        # Set beam_runner to use Dataflow\n        logging.info(f\"Using Beam Runner: DataflowRunner\")\n        standard_options.runner = \"DataflowRunner\"\n\n        # Set Google Cloud options\n        if not project_id:\n            raise ValueError(\"You must provide project_id in order to use DataFlow\")\n        logging.info(f\"GCP Project ID: {project_id}\")\n        google_cloud_options.project = project_id\n\n        if not region:\n            raise ValueError(\"You must provide region in order to use DataFlow\")\n        logging.info(f\"GCP Region: {region}\")\n        google_cloud_options.region = region\n\n        if not gcs_staging_location:\n            raise ValueError(\n                \"You must provide gcs_staging_location in order to use DataFlow\"\n            )\n        logging.info(f\"GCS staging location: {gcs_staging_location}\")\n        google_cloud_options.staging_location = gcs_staging_location\n\n        if not gcs_temp_location:\n            raise ValueError(\n                \"You must provide gcs_temp_location in order to use DataFlow\"\n            )\n        logging.info(f\"GCS temp location: {gcs_temp_location}\")\n        google_cloud_options.temp_location = gcs_temp_location\n\n        # Set Worker options\n        use_public_ips = bool(use_public_ips)  # cast to bool to be sure\n        logging.info(f\"Dataflow using public IP addresses: {use_public_ips}\")\n        worker_options.use_public_ips = use_public_ips\n        if subnetwork:\n            logging.info(f\"Dataflow subnetwork: {subnetwork}\")\n            worker_options.subnetwork = subnetwork\n\n        # If using a prebaked TFDV+Beam container image, set these options\n        if tfdv_container_image:\n            logging.info(f\"Custom Dataflow container: {tfdv_container_image}\")\n            logging.info(\"Using Dataflow v2 runner\")\n            debug_options.add_experiment(\"use_runner_v2\")\n            setup_options.sdk_location = \"container\"\n            worker_options.sdk_container_image = tfdv_container_image\n        # If not using a prebaked container image, use setup.py for TFDV installation\n        else:\n            logging.info(f\"Using setup.py file. TFDV version is {tfdv.__version__}\")\n            write_setup_py_file()\n            setup_options.setup_file = \"./setup.py\"\n\n    else:\n        # If not using Dataflow, use DirectRunner\n        logging.info(f\"Using Beam Runner: DirectRunner\")\n        standard_options.runner = \"DirectRunner\"\n\n    # Apply any extra pipeline options provided by the user\n\n    for key, val in extra_standard_options.items():\n        setattr(standard_options, key, val)\n\n    for key, val in extra_setup_options.items():\n        setattr(setup_options, key, val)\n\n    for key, val in extra_google_cloud_options.items():\n        setattr(google_cloud_options, key, val)\n\n    for key, val in extra_worker_options.items():\n        setattr(worker_options, key, val)\n\n    for key, val in extra_debug_options.items():\n        setattr(debug_options, key, val)\n\n    # if file_pattern is provided, join dataset.uri with file_pattern\n    dataset_uri = dataset.uri\n    if file_pattern:\n        dataset_uri = os.path.join(dataset.uri, file_pattern)\n\n    # if stats options are provided, pass those to generate_statistics_from_csv\n    stats_options = tfdv.StatsOptions()\n    if tfdv_stats_options:\n        # if schema is provided, load and pass to stats_options dict\n        if \"schema\" in tfdv_stats_options:\n            tfdv_stats_options[\"schema\"] = tfdv.load_schema_text(\n                tfdv_stats_options[\"schema\"]\n            )\n        stats_options = tfdv.StatsOptions(**tfdv_stats_options)\n\n    logging.info(f\"Generating statistics from: {dataset_uri}\")\n    logging.info(f\"Saving statistics to: {statistics.uri}\")\n\n    stats = tfdv.generate_statistics_from_csv(\n        data_location=dataset_uri,\n        output_path=statistics.uri,\n        pipeline_options=pipeline_options,\n        stats_options=stats_options,\n        delimiter=\";\"\n    )\n\n    html = display_util.get_statistics_html(stats, stats)\n    with open(statistics_html.path, 'wb') as file:  \n        file.write(html.encode())\n\n"
+            ],
+            "image": "python:3.7"
+          }
+        },
         "exec-sklearn-trainer": {
           "container": {
             "args": [
@@ -113,11 +341,31 @@
             "command": [
               "sh",
               "-c",
-              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'scikit-learn' 'pandas' 'pyarrow' 'dill' 'kfp==1.8.13' && \"$0\" \"$@\"\n",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'scikit-learn' 'pandas' 'pyarrow' 'dill' 'kfp==1.8.14' && \"$0\" \"$@\"\n",
               "sh",
               "-ec",
               "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef sklearn_trainer(\n    input_table: Input[Artifact],\n    gcp_project_id: str,\n    model: Output[Model],\n    model_artifact_destination: str\n):\n    from google.cloud import bigquery\n    from sklearn.preprocessing import StandardScaler\n    from sklearn.feature_selection import SelectKBest\n    from sklearn.feature_selection import chi2\n    from sklearn.ensemble import RandomForestClassifier\n    from sklearn.model_selection import RandomizedSearchCV\n    from sklearn.model_selection import PredefinedSplit\n    from sklearn.pipeline import Pipeline\n    import pandas\n    import numpy as np\n    #import joblib\n    import dill as pickle\n    #from transformers import sklearn_transformers\n\n    import os\n    from google.cloud import storage\n\n    class columnDropperTransformer():\n        def __init__(self,columns):\n            self.columns=columns\n        def transform(self,X,y=None):\n            return X.drop(self.columns,axis=1)\n        def fit(self, X, y=None):\n            return self \n\n    project_id = input_table.metadata['projectId']\n    dataset_id = input_table.metadata['datasetId']\n    table_id = input_table.metadata['tableId']\n\n    client = bigquery.Client(project = gcp_project_id)\n    sql = f\"SELECT * FROM `{project_id}.{dataset_id}.{table_id}` where split != 'VALIDATE'\"\n    training_df = client.query(sql).to_dataframe()\n\n    model_pipeline = Pipeline(\n        [\n            (\"columnDropper\", columnDropperTransformer(['user_id', 'bucket', 'split'])),\n            ('scaler', StandardScaler()),\n            (\n                'classification', \n                RandomizedSearchCV(\n                    RandomForestClassifier(),\n                    param_distributions = {\n                        \"n_estimators\": np.arange(1, 2, 3),\n                        \"max_depth\": [3, 5]\n                    },\n                    n_iter = 2,\n                    refit = True,\n                    cv = PredefinedSplit(test_fold = training_df[training_df['split']=='TEST'].index) # Predefined split (no cross validation)\n                )\n            )\n        ]\n    )\n\n    X, Y = training_df.drop(['is_churner'], axis=1), training_df['is_churner']\n\n    model_pipeline.fit(X, Y)\n\n    model.metadata[\"framework\"] = \"RF\"\n    file_name = model.path + f\".pkl\"\n\n    with open(file_name, 'wb') as file:  \n        pickle.dump(model_pipeline, file)\n\n"
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef sklearn_trainer(\n    input_table: Input[Artifact],\n    gcp_project_id: str,\n    model: Output[Model]\n):\n    from google.cloud import bigquery\n    from sklearn.preprocessing import StandardScaler\n    from sklearn.feature_selection import SelectKBest\n    from sklearn.feature_selection import chi2\n    from sklearn.ensemble import RandomForestClassifier\n    from sklearn.model_selection import RandomizedSearchCV\n    from sklearn.model_selection import PredefinedSplit\n    from sklearn.pipeline import Pipeline\n    import pandas\n    import numpy as np\n    import dill as pickle\n\n    class columnDropperTransformer():\n        def __init__(self,columns):\n            self.columns=columns\n        def transform(self,X,y=None):\n            return X.drop(self.columns,axis=1)\n        def fit(self, X, y=None):\n            return self \n\n    project_id = input_table.metadata['projectId']\n    dataset_id = input_table.metadata['datasetId']\n    table_id = input_table.metadata['tableId']\n\n    client = bigquery.Client(project = gcp_project_id)\n    sql = f\"SELECT * FROM `{project_id}.{dataset_id}.{table_id}` where split != 'VALIDATE'\"\n    training_df = client.query(sql).to_dataframe()\n\n    model_pipeline = Pipeline(\n        [\n            (\"columnDropper\", columnDropperTransformer(['user_id', 'bucket', 'split'])),\n            ('scaler', StandardScaler()),\n            (\n                'classification', \n                RandomizedSearchCV(\n                    RandomForestClassifier(),\n                    param_distributions = {\n                        \"n_estimators\": np.arange(1, 2, 3),\n                        \"max_depth\": [3, 5]\n                    },\n                    n_iter = 2,\n                    refit = True,\n                    cv = PredefinedSplit(test_fold = training_df[training_df['split']=='TEST'].index) # Predefined split (no cross validation)\n                )\n            )\n        ]\n    )\n\n    X, Y = training_df.drop(['is_churner'], axis=1), training_df['is_churner']\n\n    model_pipeline.fit(X, Y)\n\n    # Uploading the model to PIPELINE_ROOT\n    model.metadata[\"framework\"] = \"RF\"\n\n    model.path = model.path + f\".pkl\"\n    with open(model.path, 'wb') as file:  \n        pickle.dump(model_pipeline, file)\n\n"
+            ],
+            "image": "python:3.9"
+          }
+        },
+        "exec-sklearn-validator": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "sklearn_validator"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'scikit-learn' 'pandas' 'pyarrow' 'dill' 'kfp==1.8.14' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef sklearn_validator(\n    input_model: Input[Model],\n    input_table: Input[Artifact],\n    gcp_project_id: str,\n    thresholds_dict_str: str,\n    metrics: Output[ClassificationMetrics],\n    kpi: Output[Metrics]\n) -> NamedTuple(\"output\", [(\"deploy\", str)]):\n\n    from google.cloud import bigquery\n    from sklearn.ensemble import RandomForestClassifier\n    import pandas as pd\n    import logging \n    import dill as pickle\n    from sklearn.metrics import roc_curve, confusion_matrix, accuracy_score\n    import json\n    import typing\n\n    def threshold_check(val1, val2):\n        cond = \"false\"\n        if val1 >= val2 :\n            cond = \"true\"\n        return cond\n\n\n    # Loading validation data\n    project_id = input_table.metadata['projectId']\n    dataset_id = input_table.metadata['datasetId']\n    table_id = input_table.metadata['tableId']\n\n    client = bigquery.Client(project = gcp_project_id)\n    sql = f\"SELECT * FROM `{project_id}.{dataset_id}.{table_id}` where split = 'VALIDATE'\"\n    validation_df = client.query(sql).to_dataframe()\n\n\n    # Loading the input model\n    #file_name = input_model.path + \".pkl\"\n    with open(input_model.path, 'rb') as file:  \n        model = pickle.load(file)\n\n\n    # Computing predictions\n    X_val, Y_val = validation_df.drop(['is_churner'], axis=1), validation_df['is_churner']\n    Y_pred = model.predict(X_val)\n    Y_scores =  model.predict_proba(X_val)[:, 1]\n\n\n    # Computing ROC curve\n    fpr, tpr, thresholds = roc_curve(\n        y_true = Y_val, \n        y_score = Y_scores, \n        pos_label = True\n    )\n    metrics.log_roc_curve(fpr.tolist(), tpr.tolist(), thresholds.tolist()) \n\n\n    # Computing confusion matrix\n    metrics.log_confusion_matrix(\n       [\"False\", \"True\"],\n       confusion_matrix(Y_val, Y_pred).tolist(), \n    )\n\n\n    # Computing other metrics\n    accuracy = accuracy_score(Y_val, Y_pred.round())\n    thresholds_dict = json.loads(thresholds_dict_str)\n    input_model.metadata[\"accuracy\"] = float(accuracy)\n    kpi.log_metric(\"accuracy\", float(accuracy))\n    deploy = threshold_check(float(accuracy), int(thresholds_dict['roc']))\n\n    return (deploy,)\n\n"
             ],
             "image": "python:3.9"
           }
@@ -129,6 +377,26 @@
     },
     "root": {
       "dag": {
+        "outputs": {
+          "artifacts": {
+            "sklearn-validator-kpi": {
+              "artifactSelectors": [
+                {
+                  "outputArtifactKey": "kpi",
+                  "producerSubtask": "sklearn-validator"
+                }
+              ]
+            },
+            "sklearn-validator-metrics": {
+              "artifactSelectors": [
+                {
+                  "outputArtifactKey": "metrics",
+                  "producerSubtask": "sklearn-validator"
+                }
+              ]
+            }
+          }
+        },
         "tasks": {
           "bigquery-query-job": {
             "cachingOptions": {
@@ -142,7 +410,7 @@
                 "job_configuration_query": {
                   "runtimeValue": {
                     "constantValue": {
-                      "stringValue": "{\"destinationTable\": {\"projectId\": \"looker-sandbox-323013\", \"datasetId\": \"churn_featuresets\", \"tableId\": \"churn_featureset_20221005072817\"}}"
+                      "stringValue": "{\"destinationTable\": {\"projectId\": \"looker-sandbox-323013\", \"datasetId\": \"churn_featuresets\", \"tableId\": \"churn_featureset_20221103155045\"}}"
                     }
                   }
                 },
@@ -184,7 +452,176 @@
               }
             },
             "taskInfo": {
-              "name": "bigquery-query-job"
+              "name": "Generate Training Data"
+            }
+          },
+          "export-from-bq-to-gcs": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-export-from-bq-to-gcs"
+            },
+            "dependentTasks": [
+              "bigquery-query-job"
+            ],
+            "inputs": {
+              "artifacts": {
+                "bq_job_output": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "destination_table",
+                    "producerTask": "bigquery-query-job"
+                  }
+                }
+              },
+              "parameters": {
+                "gcp_project_id": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "looker-sandbox-323013"
+                    }
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "Export to GCS"
+            }
+          },
+          "generate-model-card": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-generate-model-card"
+            },
+            "dependentTasks": [
+              "bigquery-query-job",
+              "sklearn-validator"
+            ],
+            "inputs": {
+              "artifacts": {
+                "input_table": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "destination_table",
+                    "producerTask": "bigquery-query-job"
+                  }
+                },
+                "metrics": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "metrics",
+                    "producerTask": "sklearn-validator"
+                  }
+                }
+              },
+              "parameters": {
+                "gcp_project_id": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "looker-sandbox-323013"
+                    }
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "Generate Model Card"
+            }
+          },
+          "generate-statistics": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-generate-statistics"
+            },
+            "dependentTasks": [
+              "export-from-bq-to-gcs"
+            ],
+            "inputs": {
+              "artifacts": {
+                "dataset": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "gcs_dataset",
+                    "producerTask": "export-from-bq-to-gcs"
+                  }
+                }
+              },
+              "parameters": {
+                "extra_debug_options": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{}"
+                    }
+                  }
+                },
+                "extra_google_cloud_options": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{}"
+                    }
+                  }
+                },
+                "extra_setup_options": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{}"
+                    }
+                  }
+                },
+                "extra_standard_options": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{}"
+                    }
+                  }
+                },
+                "extra_worker_options": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{}"
+                    }
+                  }
+                },
+                "file_pattern": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "*.csv"
+                    }
+                  }
+                },
+                "project_id": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "looker-sandbox-323013"
+                    }
+                  }
+                },
+                "tfdv_stats_options": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{\"label_feature\": \"is_churner\"}"
+                    }
+                  }
+                },
+                "use_dataflow": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "intValue": "0"
+                    }
+                  }
+                },
+                "use_public_ips": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "True"
+                    }
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "Generate data statistics"
             }
           },
           "sklearn-trainer": {
@@ -213,25 +650,81 @@
                       "stringValue": "looker-sandbox-323013"
                     }
                   }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "Model Training"
+            }
+          },
+          "sklearn-validator": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-sklearn-validator"
+            },
+            "dependentTasks": [
+              "bigquery-query-job",
+              "sklearn-trainer"
+            ],
+            "inputs": {
+              "artifacts": {
+                "input_model": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "model",
+                    "producerTask": "sklearn-trainer"
+                  }
                 },
-                "model_artifact_destination": {
+                "input_table": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "destination_table",
+                    "producerTask": "bigquery-query-job"
+                  }
+                }
+              },
+              "parameters": {
+                "gcp_project_id": {
                   "runtimeValue": {
                     "constantValue": {
-                      "stringValue": "gs://vertex-ai-order-items-churn/pipeline_root/order_items_churn"
+                      "stringValue": "looker-sandbox-323013"
+                    }
+                  }
+                },
+                "thresholds_dict_str": {
+                  "runtimeValue": {
+                    "constantValue": {
+                      "stringValue": "{\"roc\":0.8}"
                     }
                   }
                 }
               }
             },
             "taskInfo": {
-              "name": "sklearn-trainer"
+              "name": "Model Evaluation"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "sklearn-validator-kpi": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "sklearn-validator-metrics": {
+            "artifactType": {
+              "schemaTitle": "system.ClassificationMetrics",
+              "schemaVersion": "0.0.1"
             }
           }
         }
       }
     },
     "schemaVersion": "2.0.0",
-    "sdkVersion": "kfp-1.8.13"
+    "sdkVersion": "kfp-1.8.14"
   },
   "runtimeConfig": {
     "gcsOutputDirectory": "gs://vertex-ai-order-items-churn/pipeline_root/order_items_churn"

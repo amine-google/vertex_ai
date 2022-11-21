@@ -60,7 +60,8 @@ def sklearn_trainer(
     
     # Uploading the model to PIPELINE_ROOT
     model.metadata["framework"] = "RF"
-    file_name = model.path + f".pkl"
-    with open(file_name, 'wb') as file:  
+    #file_name = model.path + f".pkl"
+    model.path = model.path + f".pkl"
+    with open(model.path, 'wb') as file:  
         pickle.dump(model_pipeline, file)
 
